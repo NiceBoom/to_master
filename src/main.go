@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/robfig/cron/v3"
 	"github.com/tidwall/gjson"
 	"io"
 	"io/ioutil"
@@ -24,46 +23,169 @@ var (
 
 func main() {
 
-	var c = cron.New()
-	//spec := "0 40 8 1/1 * ? "
-	spec := "0/3 * * * * * "
-	_, _ = c.AddFunc(spec, sendTodayMsg)
+	//var c = cron.New()
+	////spec := "0 40 8 1/1 * ? "
+	//spec := "0/3 * * * * * "
+	//_, _ = c.AddFunc(spec, sendTodayMsg)
+	//c.Start()
+	//select {}
+	sendTodayMsg()
+
 }
 
-func sendTodayMsg() {
-	//获取天气数据
-	msg, _ := getWeatherForAmap(GET_WEATHER_FOR_AMAP_URL, GET_WEATHER_FOR_AMAP_TOKEN, GET_WEATHER_FOR_AMAP_CITYID)
-	fmt.Println(msg)
-	//发送今天天气消息
-	robot, _ := sendWeatherMsgToDingTalkRobot(SEND_MSG_TO_DINGTALK_ROBOT_URL, msg)
-	fmt.Println(robot)
+type DayWeather struct {
+	Date         string `json:"date"`
+	Week         string `json:"week"`
+	DayWeather   string `json:"dayweather"`
+	NightWeather string `json:"nightweather"`
+	DayTemp      string `json:"daytemp"`
+	NightTemp    string `json:"nighttemp"`
+	DayWind      string `json:"daywind"`
+	NightWind    string `json:"nightwind"`
+	DayPower     string `json:"daypower"`
+	NightPower   string `json:"nightpower"`
 }
 
-//从高德获取所有天气数据
-func getWeatherForAmap(weatherUrl string, weatherToken string, cityID string) (string, error) {
-	params := url.Values{}
-	Url, err := url.Parse(weatherUrl)
+type amapApiResponse struct {
+	Status    string `json:"status"`
+	Count     string `json:"count"`
+	Info      string `json:"info"`
+	Infocode  string `json:"infocode"`
+	Forecasts []struct {
+		City       string `json:"city"`
+		Adcode     string `json:"adcode"`
+		Province   string `json:"province"`
+		Reporttime string `json:"reporttime"`
+		Casts      []struct {
+			Date         string `json:"date"`
+			Week         string `json:"week"`
+			DayWeather   string `json:"dayweather"`
+			NightWeather string `json:"nightweather"`
+			DayTemp      string `json:"daytemp"`
+			NightTemp    string `json:"nighttemp"`
+			DayWind      string `json:"daywind"`
+			NightWind    string `json:"nightwind"`
+			DayPower     string `json:"daypower"`
+			NightPower   string `json:"nightpower"`
+		} `json:"casts"`
+	} `json:"forecasts"`
+}
+
+type CityCode string
+type DayOffset int8
+
+const (
+	Today    DayOffset = 0
+	Tomorrow DayOffset = 1
+)
+
+//模块化包装
+type AmapWeather struct {
+	url   *url.URL
+	token string
+}
+
+//工厂方法，组装url，减少传递过程中的参数
+func NewAmapWeather(weatherUrl string, token string) (*AmapWeather, error) {
+	parse, err := url.Parse(weatherUrl)
 	if err != nil {
-		log.Println("sender init failed: " + err.Error())
-		return "", err
+		log.Println("sender init failed:" + err.Error())
+		return nil, err
 	}
-	params.Set("key", weatherToken)
-	params.Set("city", cityID)
+	return &AmapWeather{
+		url:   parse,
+		token: token,
+	}, nil
+}
+
+//具体实现类
+func (a *AmapWeather) GetWeather(city CityCode, dayOffset DayOffset) (*DayWeather, error) {
+	params := url.Values{}
+	params.Set("key", a.token)
+	params.Set("city", string(city))
 	params.Set("extensions", "all")
-	Url.RawQuery = params.Encode()
-	urlPath := Url.String()
+	a.url.RawQuery = params.Encode()
+	urlPath := a.url.String()
 	fmt.Println(urlPath)
 	resp, err := http.Get(urlPath)
+	if err != nil {
+		return nil, err
+	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
 		}
 	}(resp.Body)
 	body, err := ioutil.ReadAll(resp.Body)
-	var weatherMsg = string(body)
-	fmt.Println(weatherMsg)
-	return weatherMsg, nil
+	fmt.Println(string(body))
+	//将获得的数据解组为结构
+	var amapResp amapApiResponse
+	err = json.Unmarshal(body, &amapResp)
+	if err != nil {
+		log.Println("amapResp Unmarshal fail:" + err.Error())
+		return nil, err
+	}
+	s := amapResp.Forecasts[0]
+	s2 := s.Casts[dayOffset]
+	return &DayWeather{
+		Date:         s2.Date,
+		Week:         s2.Week,
+		DayWeather:   s2.DayWeather,
+		NightWeather: s2.NightWeather,
+		DayTemp:      s2.DayTemp,
+		NightTemp:    s2.NightTemp,
+		DayWind:      s2.DayWind,
+		NightWind:    s2.NightWind,
+		DayPower:     s2.DayPower,
+		NightPower:   s2.NightPower,
+	}, nil
 }
+
+func sendTodayMsg() {
+	//获取天气数据
+	//msg, _ := getWeatherForAmap(GET_WEATHER_FOR_AMAP_URL, GET_WEATHER_FOR_AMAP_TOKEN, GET_WEATHER_FOR_AMAP_CITYID)
+	//fmt.Println(msg)
+	//组装URL+token
+	amapWeather, err := NewAmapWeather(GET_WEATHER_FOR_AMAP_URL, GET_WEATHER_FOR_AMAP_TOKEN)
+	if err != nil {
+		log.Println("get weather error:" + err.Error())
+	}
+	//获取今天数据
+	amapWeatherinfo, err2 := amapWeather.GetWeather(CityCode(GET_WEATHER_FOR_AMAP_CITYID), Today)
+	if err2 != nil {
+
+	}
+	fmt.Println(amapWeatherinfo.Date + amapWeatherinfo.DayPower + amapWeatherinfo.NightTemp)
+	//发送今天天气消息
+	//robot, _ := sendWeatherMsgToDingTalkRobot(SEND_MSG_TO_DINGTALK_ROBOT_URL, msg)
+	//fmt.Println(robot)
+}
+
+////从高德获取所有天气数据
+//func getWeatherForAmap(weatherUrl string, weatherToken string, cityID string) (string, error) {
+//	params := url.Values{}
+//	Url, err := url.Parse(weatherUrl)
+//	if err != nil {
+//		log.Println("sender init failed: " + err.Error())
+//		return "", err
+//	}
+//	params.Set("key", weatherToken)
+//	params.Set("city", cityID)
+//	params.Set("extensions", "all")
+//	Url.RawQuery = params.Encode()
+//	urlPath := Url.String()
+//	fmt.Println(urlPath)
+//	resp, err := http.Get(urlPath)
+//	defer func(Body io.ReadCloser) {
+//		err := Body.Close()
+//		if err != nil {
+//		}
+//	}(resp.Body)
+//	body, err := ioutil.ReadAll(resp.Body)
+//	var weatherMsg = string(body)
+//	fmt.Println(weatherMsg)
+//	return weatherMsg, nil
+//}
 
 //向钉钉机器人发送当天天气消息
 func sendWeatherMsgToDingTalkRobot(msgUrl string, msg string) (string, error) {
