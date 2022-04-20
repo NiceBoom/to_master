@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/robfig/cron/v3"
 	"github.com/tidwall/gjson"
 	"io"
 	"io/ioutil"
@@ -13,20 +14,29 @@ import (
 	"time"
 )
 
-func main() {
-	var GET_WEATHER_FOR_AMAP_URL = "https://restapi.amap.com/v3/weather/weatherInfo"
-	var GET_WEATHER_FOR_AMAP_TOKEN = "ef1fd7c39e929320a38ff7185ae6fcff"
-	var SEND_MSG_TO_DINGTALK_ROBOT_URL = "https://oapi.dingtalk.com/robot/send?access_token=ffaabe93a835ff732b8053c0cd54c1e8315a8f906ddc0cc722dad5e833ff281c"
+var (
+	GET_WEATHER_FOR_AMAP_URL       = "https://restapi.amap.com/v3/weather/weatherInfo"
+	GET_WEATHER_FOR_AMAP_TOKEN     = "ef1fd7c39e929320a38ff7185ae6fcff"
+	SEND_MSG_TO_DINGTALK_ROBOT_URL = "https://oapi.dingtalk.com/robot/send?access_token=ffaabe93a835ff732b8053c0cd54c1e8315a8f906ddc0cc722dad5e833ff281c"
 	//var SEND_MSG_TO_DINGTALK_ROBOT_TOKEN = "ffaabe93a835ff732b8053c0cd54c1e8315a8f906ddc0cc722dad5e833ff281c"
-	var GET_WEATHER_FOR_AMAP_CITYID = "110100" //北京代码
-	fmt.Println("=============start get weather msg=====================")
+	GET_WEATHER_FOR_AMAP_CITYID = "110100" //北京代码
+)
+
+func main() {
+
+	var c = cron.New()
+	//spec := "0 40 8 1/1 * ? "
+	spec := "0/3 * * * * * "
+	_, _ = c.AddFunc(spec, sendTodayMsg)
+}
+
+func sendTodayMsg() {
+	//获取天气数据
 	msg, _ := getWeatherForAmap(GET_WEATHER_FOR_AMAP_URL, GET_WEATHER_FOR_AMAP_TOKEN, GET_WEATHER_FOR_AMAP_CITYID)
 	fmt.Println(msg)
-	fmt.Println("============= get weather msg is already =====================")
-	fmt.Println("============= start send weather msg to dingTalk robot =====================")
+	//发送今天天气消息
 	robot, _ := sendWeatherMsgToDingTalkRobot(SEND_MSG_TO_DINGTALK_ROBOT_URL, msg)
 	fmt.Println(robot)
-	fmt.Println("============= send weather msg to dingTalk robot of already =====================")
 }
 
 //从高德获取所有天气数据
